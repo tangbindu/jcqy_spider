@@ -5,21 +5,30 @@ const jsdom = require("jsdom")
 const fs = require("fs")
 const { JSDOM } = jsdom;
 let request = require('request');
-let requestPromise = require('request-promise')
+let requestPromise = require('request-promise');
+let token=null;
+
+
 
 tools={
     getToken(){
-        return new Promise((resolve,reject)=>{
-            request.post({url:'https://api.weixin.qq.com/cgi-bin/token', form:{
-                "grant_type": "client_credential",
-                "appid": "wxc6fbc71bc20976d4",
-                "secret": "5d2968b9fa1578fdfd9d7068f0667810"
-            }}, function(error, response, body) {
-                resolve(JSON.parse(body).access_token)
-            })
+        request.post({url:'https://api.weixin.qq.com/cgi-bin/token', form:{
+            "grant_type": "client_credential",
+            "appid": "wxc6fbc71bc20976d4",
+            "secret": "5d2968b9fa1578fdfd9d7068f0667810"
+        }}, function(error, response, body) {
+            token=JSON.parse(body).access_token;
         })
     }
 }
+
+setInterval(()=>{
+    //半小时更新一次token
+    tools.getToken();
+},1800000)
+tools.getToken();
+
+
 
 //爬网页数据
 function spiderHtmlFromWebSite(url) {
@@ -54,8 +63,8 @@ function getMatchFromHTML(html) {
         let time = timeString.replace(/&nbsp;/g, "").split("[")[1].replace(/]/g, "").replace(/--/g, "-").replace(/：/g, ":");
         for (var j = 0; j < trs.length; j++) {
             let id = trs[j].getElementsByTagName("i")[0].innerHTML;
-            let teams1 = body.getElementsByClassName("wh-4")[0].getElementsByTagName("a")[0].innerHTML;
-            let teams2 = body.getElementsByClassName("wh-6")[0].getElementsByTagName("a")[0].innerHTML;
+            let teams1 = trs[j].getElementsByClassName("wh-4")[0].getElementsByTagName("a")[0].innerHTML;
+            let teams2 = trs[j].getElementsByClassName("wh-6")[0].getElementsByTagName("a")[0].innerHTML;
             let oddsNodeParent = body.getElementsByClassName("wh-7")[0];
             let odds = [
                 oddsNodeParent.getElementsByTagName("a")[0].innerHTML.replace(/[^\d.]/g, ""),
@@ -83,12 +92,15 @@ function getMatchFromHTML(html) {
 }
 //获取多天，默认两天
 function getMutipDays() {
+    let offset=0;
     let todayString, yesterdayString;
     let today = new Date();
-    todayString = today.getFullYear() + "-" + ("0" + (today.getMonth() + 1)).slice(-2) + "-" + ("0" + (today.getDay() - 1)).slice(-2)
+    today.setDate(today.getDate()+offset);
+    todayString = today.getFullYear() + "-" + ("0" + (today.getMonth() + 1)).slice(-2) + "-" + ("0" + today.getDate()).slice(-2)
     let yesterday = new Date();
-    yesterday.setDate(today.getDate() - 1)
-    yesterdayString = today.getFullYear() + "-" + ("0" + (yesterday.getMonth() + 1)).slice(-2) + "-" + ("0" + (yesterday.getDay() + 1)).slice(-2);
+    yesterday.setDate(yesterday.getDate() + offset+1)
+    yesterdayString = yesterday.getFullYear() + "-" + ("0" + (yesterday.getMonth() + 1)).slice(-2) + "-" + ("0" + yesterday.getDate()).slice(-2);
+    console.log(todayString, yesterdayString)
     return [todayString, yesterdayString]
 }
 //爬取多天的数据
@@ -113,19 +125,17 @@ function spiderMutipDays() {
 //查询云数据库
 function queryCloudMatchsList(){
     return new Promise((resolve,reject)=>{
-        tools.getToken().then(token=>{
-            let options = {
-                method: 'POST',
-                uri: 'https://api.weixin.qq.com/tcb/databasequery?access_token=' + token + '',
-                body: {
-                    "env":'jcyq-2knc5',
-                    "query":"db.collection('matchData').limit(10).get()",
-                },
-                json:true
-            }
-            requestPromise(options).then(res=>{
-                resolve(res.data)
-            })
+        let options = {
+            method: 'POST',
+            uri: 'https://api.weixin.qq.com/tcb/databasequery?access_token=' + token + '',
+            body: {
+                "env":'jcyq-2knc5',
+                "query":"db.collection('matchData').limit(30).get()",
+            },
+            json:true
+        }
+        requestPromise(options).then(res=>{
+            resolve(res.data)
         })
     })
 }
@@ -170,9 +180,61 @@ function addMatch(id,match){
 //推送到云数据库
 function pushToCloudDatabase(localMatchsList){
     queryCloudMatchsList().then(cloudMatchsList=>{
-        localMatchsList.forEach(localMatch=>{
-            switch()
+        cloudMatchsList.forEach((item,index)=>{
+            item.matchid=item.matchid?item.matchid: null;
+            item.score=item.score?item.score: null;
+            cloudMatchsList[index]=JSON.parse(item);
         })
+        let addList=[];//新增列表
+        let updateList=[];//更新列表
+        localMatchsList.forEach(localMatch=>{
+            let findCloudOne=cloudMatchsList.find(item=>item.matchid==localMatch.matchid);
+            if(findCloudOne){
+                if(findCloudOne.score!=localMatch.score){
+                    updateList.push(localMatch)
+                }
+            }else{
+                addList.push(localMatch)
+            }
+        })
+        console.log("新增数据:")
+        console.dir(addList)
+        console.log("更新数据:")
+        console.dir(updateList)
+        //完成推送
+        if(addList.length>0){
+            let options = {
+                method: 'POST',
+                url: 'https://api.weixin.qq.com/tcb/databaseadd?access_token=' + token + '',
+                body: {
+                    "env":'jcyq-2knc5',
+                    "query":`db.collection('matchData').add({data:${JSON.stringify(addList)}})`,
+                },
+                json:true
+            }
+            requestPromise(options).then(res=>{
+                console.log(`add到云数据库成功,共添加了${addList.length}条数据`)
+            })
+        }
+        //完成推送
+        if(updateList.length>0){
+            let options = {
+                method: 'POST',
+                url: 'https://api.weixin.qq.com/tcb/databaseadd?access_token=' + token + '',
+                body: {
+                    "env":'jcyq-2knc5',
+                    "query":"",
+                },
+                json:true
+            }
+            updateList.forEach(element => {
+                options.body.query=`db.collection('matchData').where({matchid:${element.matchid}}).update({data:${JSON.stringify(element)}})`
+                requestPromise(options).then(res=>{
+                    console.log("update到云数据库成功,单次更新1条数据")
+                })
+            });
+        }
+        
     })
 }
 
@@ -183,13 +245,13 @@ function pushToCloudDatabase(localMatchsList){
 // 只存三天的数据，有变化就同步到服务器
 let mySpider = {
     //爬取时间
-    spriteTime: [
+    spiderTime: [ 
         "06:00",
         "11:00",
         "11:00",
         "11:00",
-        "11:00",
-        "12:34",
+        "11:12",
+        "22:46",
     ],
     localMatchsBuffer: fs.readFileSync('./matchsBuffer.json').toString(),
     //当前时间
@@ -197,11 +259,11 @@ let mySpider = {
     //当前时间串
     currentTimeString: null,
     work() {
-        console.log("爬虫开始工作")
+        console.log(">>爬虫开始工作,等待触发时间")
         setInterval(() => {
             this.currentTime = new Date();
             this.currentTimeString = ("00" +this.currentTime.getHours()).slice(-2) + ":" + ("00" + this.currentTime.getMinutes()).slice(-2);
-            this.spriteTime.forEach(st => {
+            this.spiderTime.forEach(st => {
                 if (st == this.currentTimeString) {
                     //时间相等就去爬
                     spiderMutipDays().then(matchsList => {
@@ -212,7 +274,7 @@ let mySpider = {
                     // console.log("休息" + this.currentTimeString)
                 }
             })
-        }, 30000) //上线建议20秒 20000
+        }, 10000) //上线建议20秒 20000
     },
     //推送到服务器
     pushMatchsList(matchListString,matchsList) {

@@ -92,7 +92,7 @@ function getMatchFromHTML(html) {
 }
 //获取多天，默认两天
 function getMutipDays() {
-    let offset=0;
+    let offset=-2;
     let todayString, yesterdayString;
     let today = new Date();
     today.setDate(today.getDate()+offset);
@@ -218,17 +218,16 @@ function pushToCloudDatabase(localMatchsList){
         }
         //完成推送
         if(updateList.length>0){
-            let options = {
-                method: 'POST',
-                url: 'https://api.weixin.qq.com/tcb/databaseadd?access_token=' + token + '',
-                body: {
-                    "env":'jcyq-2knc5',
-                    "query":"",
-                },
-                json:true
-            }
             updateList.forEach(element => {
-                options.body.query=`db.collection('matchData').where({matchid:${element.matchid}}).update({data:${JSON.stringify(element)}})`
+                let options = {
+                    method: 'POST',
+                    uri: 'https://api.weixin.qq.com/tcb/databaseupdate?access_token=' + token + '',
+                    body: {
+                        "env":'jcyq-2knc5',
+                        "query":`db.collection('matchData').where({'matchid':'${element.matchid}'}).update({data:${JSON.stringify(element)}})`,
+                    },
+                    json:true
+                }
                 requestPromise(options).then(res=>{
                     console.log("update到云数据库成功,单次更新1条数据")
                 })
@@ -246,13 +245,35 @@ function pushToCloudDatabase(localMatchsList){
 let mySpider = {
     //爬取时间
     spiderTime: [ 
+        "00:00",
+        "01:00",
+        "02:00",
+        "03:00",
+        "04:00",
+        "05:00",
         "06:00",
+        "07:00",
+        "08:00",
+        "09:00",
+        "10:00",
         "11:00",
-        "11:00",
-        "11:00",
-        "11:12",
-        "22:46",
+        "12:00",
+        "13:00",
+        "14:00",
+        "15:00",
+        "16:00",
+        "17:00",
+        "18:00",
+        "19:00",
+        "20:00",
+        "21:00",
+        "22:00",
+        "23:00",
+        "20:21"
     ],
+    // Array(24).fill("1").forEach((item,index)=>{
+    //     console.log(("0"+index).slice(-2)+":00")
+    // })
     localMatchsBuffer: fs.readFileSync('./matchsBuffer.json').toString(),
     //当前时间
     currentTime: null,

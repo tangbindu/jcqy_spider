@@ -92,13 +92,13 @@ function getMatchFromHTML(html) {
 }
 //获取多天，默认两天
 function getMutipDays() {
-    let offset=-2;
+    let offset=0;
     let todayString, yesterdayString;
     let today = new Date();
     today.setDate(today.getDate()+offset);
     todayString = today.getFullYear() + "-" + ("0" + (today.getMonth() + 1)).slice(-2) + "-" + ("0" + today.getDate()).slice(-2)
     let yesterday = new Date();
-    yesterday.setDate(yesterday.getDate() + offset+1)
+    yesterday.setDate(yesterday.getDate() + offset-1)
     yesterdayString = yesterday.getFullYear() + "-" + ("0" + (yesterday.getMonth() + 1)).slice(-2) + "-" + ("0" + yesterday.getDate()).slice(-2);
     console.log(todayString, yesterdayString)
     return [todayString, yesterdayString]
@@ -269,7 +269,8 @@ let mySpider = {
         "21:00",
         "22:00",
         "23:00",
-        "20:21"
+        "09:18",
+        "09:19"
     ],
     // Array(24).fill("1").forEach((item,index)=>{
     //     console.log(("0"+index).slice(-2)+":00")
@@ -295,7 +296,7 @@ let mySpider = {
                     // console.log("休息" + this.currentTimeString)
                 }
             })
-        }, 10000) //上线建议20秒 20000
+        }, 25000) //上线建议20~50秒 
     },
     //推送到服务器
     pushMatchsList(matchListString,matchsList) {
